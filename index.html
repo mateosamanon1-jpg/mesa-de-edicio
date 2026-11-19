@@ -473,6 +473,7 @@ footer{font-size:13px;color:var(--muted);text-align:center;font-weight:600}
               <div class="f"><label for="nPara">Cliente de la agencia <span style="font-weight:600;color:var(--muted)">(opcional)</span></label><input class="field" id="nPara" maxlength="80" list="subList" placeholder="Ej: Bodegón Luna"></div>
             </div>
             <div class="hint" id="nHint" hidden></div>
+            <div class="f" id="nCDriveF" hidden><label for="nCDrive" id="nCDriveLbl">Carpeta de Drive del cliente</label><input class="field" id="nCDrive" type="url" maxlength="500" placeholder="https://drive.google.com/…"><span class="cl-sub">Se guarda en el cliente y la usan todos sus videos. La pegás una sola vez.</span></div>
             <div class="f"><span class="lbl" id="typeLbl">¿Qué video es?</span>
               <div class="types" role="radiogroup" aria-labelledby="typeLbl" id="nTypes"></div>
             </div>
@@ -480,7 +481,7 @@ footer{font-size:13px;color:var(--muted);text-align:center;font-weight:600}
               <div class="f"><label for="nFecha">Fecha de entrega</label><input class="field" id="nFecha" type="date"></div>
               <div class="f"><label for="nHora">Hora</label><input class="field" id="nHora" type="time" value="18:00"></div>
             </div>
-            <div class="f"><label for="nLink">Link de Drive del video <span style="font-weight:600;color:var(--muted)">(opcional)</span></label><input class="field" id="nLink" type="url" maxlength="500" placeholder="https://drive.google.com/…"></div>
+            <div class="f"><label for="nLink">Link propio de este video <span style="font-weight:600;color:var(--muted)">(opcional, solo si tiene uno distinto)</span></label><input class="field" id="nLink" type="url" maxlength="500" placeholder="https://drive.google.com/…"></div>
             <div class="err" id="nErr" hidden></div>
             <button class="btn primary" type="submit" id="nSave"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>Agregar al calendario</button>
           </form>
@@ -780,6 +781,9 @@ footer{font-size:13px;color:var(--muted);text-align:center;font-weight:600}
     $("#subList").innerHTML = [...new Set([...subs, ...fromJobs])].map(x=>`<option value="${esc(x)}">`).join("");
     if(c && isUrl(c.drive)){ h.innerHTML = `${FOLDER}La carpeta de Drive de ${esc(c.nombre||name)} ya está guardada. El proyecto la va a usar si no pegás otro link.`; h.hidden=false }
     else h.hidden = true;
+    const needs = !!name && !(c && isUrl(c.drive));
+    $("#nCDriveF").hidden = !needs;
+    if(needs) $("#nCDriveLbl").textContent = `Carpeta de Drive de ${name} (opcional)`;
   }
   $("#nCliente").addEventListener("input", updateHint);
 
@@ -1039,7 +1043,7 @@ footer{font-size:13px;color:var(--muted);text-align:center;font-weight:600}
   }
 
   /* ---------- new project form ---------- */
-  function resetNewForm(){ $("#nTitulo").value=""; $("#nCliente").value=""; $("#nPara").value=""; $("#nLink").value=""; $("#nHint").hidden=true; $("#nFecha").value = toDateInput(selDay < dayStart(Date.now()) ? Date.now() : selDay); $("#nErr").hidden = true }
+  function resetNewForm(){ $("#nTitulo").value=""; $("#nCliente").value=""; $("#nPara").value=""; $("#nLink").value=""; $("#nCDrive").value=""; $("#nCDriveF").hidden=true; $("#nHint").hidden=true; $("#nFecha").value = toDateInput(selDay < dayStart(Date.now()) ? Date.now() : selDay); $("#nErr").hidden = true }
   $("#newForm").addEventListener("submit", async ev => {
     ev.preventDefault();
     const err=$("#nErr"), titulo=$("#nTitulo").value.trim();
@@ -1049,10 +1053,16 @@ footer{font-size:13px;color:var(--muted);text-align:center;font-weight:600}
     const mesa = writeMesa(); if(!mesa){ toast("No se pudo identificar tu cuenta"); return }
     const link = $("#nLink").value.trim();
     if(link && !isUrl(link)){ err.textContent="El link tiene que empezar con https://"; err.hidden=false; $("#nLink").focus(); return }
+    const cDrive = $("#nCDriveF").hidden ? "" : $("#nCDrive").value.trim();
+    if(cDrive && !isUrl(cDrive)){ err.textContent="El link de la carpeta tiene que empezar con https://"; err.hidden=false; $("#nCDrive").focus(); return }
     const data = { titulo, cliente:$("#nCliente").value.trim(), para:$("#nPara").value.trim(), link, formato:getType("ntype"), entrega, estado:"porEmpezar", prioridad:"normal", notas:"", creado:Date.now(), creadoPor:myId||"", entregadoEn:null };
     const btn=$("#nSave"); btn.disabled=true;
     try{
       await store.save(mesa, newId(), data);
+      if(cDrive && data.cliente){
+        const ck = slug(data.cliente), cur = clientInfo(ck, mesa) || {};
+        try{ await saveClient(mesa, ck, {nombre: cur.nombre || data.cliente, drive: cDrive, subs: cur.subs || {}}) }catch(e){ writeFailed(e) }
+      }
       const d=new Date(entrega); calMonth=new Date(d.getFullYear(),d.getMonth(),1).getTime(); selDay=dayStart(entrega);
       render();
       const cell = document.querySelector(`.day[data-day="${selDay}"]`);
